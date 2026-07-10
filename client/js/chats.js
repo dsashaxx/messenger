@@ -4,12 +4,14 @@ const me    = JSON.parse(localStorage.getItem('user') || 'null');
 if (!token || !me) window.location.href = '/';
 
 let currentChatId   = null;
+let currentChatType = null;
 let oldestMessageId = null;
 let hasMore         = true;
 let modalMode       = 'private';
 let allUsers        = [];
+let typingTimer     = null;
+let unreadCounts    = {};
 
-// Показываем имя текущего пользователя
 const myAvatar   = document.getElementById('my-avatar');
 const myUsername = document.getElementById('my-username');
 if (myAvatar && myUsername && me) {
@@ -33,14 +35,69 @@ const socket = io({ auth: { token } });
 socket.on('connect', () => console.log('Socket подключён'));
 socket.on('connect_error', (err) => console.error('Socket ошибка:', err.message));
 
+// Новое сообщение
 socket.on('new_message', (msg) => {
-  // Не добавляем своё сообщение повторно — оно уже показано
-  if (msg.chat_id === currentChatId && msg.sender_id !== me.id) {
+  if (Number(msg.chat_id) === Number(currentChatId) && Number(msg.sender_id) !== Number(me.id)) {
     appendMessage(msg);
     scrollToBottom();
+    // Сразу отмечаем как прочитанное раз чат открыт
+    socket.emit('read_messages', { chatId: currentChatId });
+  } else if (Number(msg.sender_id) !== Number(me.id)) {
+    // Чат не открыт — увеличиваем счётчик
+    unreadCounts[msg.chat_id] = (unreadCounts[msg.chat_id] || 0) + 1;
+    updateUnreadBadge(msg.chat_id);
   }
   updateChatPreview(msg.chat_id, msg.text);
 });
+
+// Сообщения прочитаны — обновляем галочки
+socket.on('messages_read', ({ chatId }) => {
+  if (Number(chatId) === Number(currentChatId)) {
+    // Обновляем все галочки в текущем чате на ✓✓
+    document.querySelectorAll('.msg-read-status').forEach(el => {
+      el.textContent = '✓✓';
+      el.style.color = 'rgba(255,255,255,1)';
+      el.title = 'Прочитано';
+    });
+  }
+});
+
+// Индикатор печатает
+socket.on('typing', ({ username, chatId }) => {
+  if (Number(chatId) !== Number(currentChatId)) return;
+  const el = document.getElementById('typing-indicator');
+  if (el) {
+    el.textContent = `${username} печатает...`;
+    el.style.display = 'block';
+  }
+});
+
+socket.on('stop_typing', ({ chatId }) => {
+  if (Number(chatId) !== Number(currentChatId)) return;
+  const el = document.getElementById('typing-indicator');
+  if (el) el.style.display = 'none';
+});
+
+// Обновить бейдж с непрочитанными
+function updateUnreadBadge(chatId) {
+  const item = document.getElementById(`chat-item-${chatId}`);
+  if (!item) return;
+
+  let badge = item.querySelector('.unread-badge');
+  const count = unreadCounts[chatId] || 0;
+
+  if (count > 0) {
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'unread-badge';
+      badge.style.cssText = 'min-width:18px;height:18px;background:var(--primary);color:#fff;border-radius:9px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px;margin-left:auto;flex-shrink:0;';
+      item.querySelector('.chat-item-top').appendChild(badge);
+    }
+    badge.textContent = count > 99 ? '99+' : count;
+  } else {
+    if (badge) badge.remove();
+  }
+}
 
 async function loadChats() {
   const res  = await api('/chats');
@@ -59,7 +116,7 @@ async function loadChats() {
     const avatarClass = isSaved ? 'saved' : isGroup ? 'group' : '';
     const displayName = isSaved ? 'Избранное' : (chat.name || 'Без названия');
     return `
-      <div class="chat-item" id="chat-item-${chat.id}" onclick="openChat(${chat.id}, '${escHtml(displayName)}')">
+      <div class="chat-item" id="chat-item-${chat.id}" onclick="openChat(${chat.id}, '${escHtml(displayName)}', '${chat.type}')">
         <div class="chat-item-top">
           <div class="chat-avatar ${avatarClass}">${initial}</div>
           <div class="chat-item-name">${escHtml(displayName)}</div>
@@ -77,23 +134,42 @@ function updateChatPreview(chatId, text) {
   if (el) el.textContent = text;
 }
 
-async function openChat(chatId, chatName) {
-  currentChatId   = chatId;
+async function openChat(chatId, chatName, chatType) {
+  currentChatId   = Number(chatId);
+  currentChatType = chatType || null;
   oldestMessageId = null;
   hasMore         = true;
+
+  // Сбрасываем счётчик непрочитанных
+  unreadCounts[chatId] = 0;
+  updateUnreadBadge(chatId);
 
   document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
   const activeItem = document.getElementById(`chat-item-${chatId}`);
   if (activeItem) activeItem.classList.add('active');
+
+  socket.emit('join_chat', currentChatId);
+  socket.emit('read_messages', { chatId: currentChatId });
+
+  const membersBtn = chatType === 'group' ? `
+    <button onclick="openMembersModal()" style="width:34px;height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);" title="Участники">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </button>
+  ` : '';
 
   document.getElementById('chat-area').innerHTML = `
     <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;gap:10px;">
       <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">${(chatName||'?')[0].toUpperCase()}</div>
       <div style="flex:1">
         <div style="font-weight:700;font-size:15px;color:var(--text)">${escHtml(chatName)}</div>
+        <div id="typing-indicator" style="display:none;font-size:11px;color:var(--primary);font-style:italic;margin-top:1px;"></div>
       </div>
-      <button onclick="toggleSearch()" style="width:34px;height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);">
+      ${membersBtn}
+      <button onclick="toggleSearch()" style="width:34px;height:34px;border:1px solid var(--border);background:var(--bg);border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--muted);" title="Поиск">
         <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </button>
+      <button onclick="deleteChat()" style="width:34px;height:34px;border:1px solid #f0cccb;background:#fdf0ef;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--danger);" title="Удалить чат">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
       </button>
     </div>
     <div id="search-bar" style="display:none;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);gap:8px;align-items:center;">
@@ -108,7 +184,7 @@ async function openChat(chatId, chatName) {
     <div style="background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:10px;align-items:flex-end;">
       <textarea id="msg-input" placeholder="Написать сообщение..." rows="1"
         style="flex:1;border:1.5px solid var(--border);border-radius:20px;padding:10px 16px;font-size:14px;outline:none;resize:none;max-height:120px;font-family:inherit;background:var(--bg);color:var(--text);transition:border-color .15s;"
-        onkeydown="handleMsgKey(event)" oninput="autoResize(this)"
+        onkeydown="handleMsgKey(event)" oninput="handleTyping(event)"
         onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
       <button onclick="sendMessage()" style="width:40px;height:40px;background:var(--primary);border:none;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;" onmouseover="this.style.background='var(--primary-h)'" onmouseout="this.style.background='var(--primary)'">
         <svg width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -168,14 +244,19 @@ function makeLoadMoreBtn() {
 }
 
 function createMessageEl(msg) {
-  const isMine = msg.sender_id === me.id;
+  const isMine = Number(msg.sender_id) === Number(me.id);
   const div = document.createElement('div');
   div.style.cssText = `display:flex;flex-direction:column;align-items:${isMine ? 'flex-end' : 'flex-start'};`;
+  div.dataset.messageId = msg.id;
   div.innerHTML = `
     ${!isMine ? `<div style="font-size:11px;font-weight:600;color:var(--primary);margin-bottom:3px;padding-left:4px;">${escHtml(msg.sender_name)}</div>` : ''}
     <div style="max-width:65%;padding:10px 14px;border-radius:${isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};background:${isMine ? 'var(--primary)' : 'var(--surface)'};color:${isMine ? '#fff' : 'var(--text)'};font-size:14px;line-height:1.5;border:${isMine ? 'none' : '1px solid var(--border)'};">
       ${escHtml(msg.text)}
-      <div style="font-size:10px;opacity:.6;margin-top:4px;text-align:right;">${formatTime(msg.created_at)}</div>
+      <div style="font-size:10px;opacity:.6;margin-top:4px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+        <span>${formatTime(msg.created_at)}</span>
+        ${isMine ? `<span class="msg-read-status" style="color:${msg.is_read ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.5)'};" title="${msg.is_read ? 'Прочитано' : 'Доставлено'}">${msg.is_read ? '✓✓' : '✓'}</span>` : ''}
+        ${isMine ? `<span onclick="deleteMessage(${msg.id})" style="cursor:pointer;opacity:.7;font-size:10px;" title="Удалить">✕</span>` : ''}
+      </div>
     </div>
   `;
   return div;
@@ -192,7 +273,6 @@ function sendMessage() {
   const text  = input.value.trim();
   if (!text || !currentChatId) return;
 
-  // Сразу показываем на экране не дожидаясь сокета
   const tempMsg = {
     id:          Date.now(),
     chat_id:     currentChatId,
@@ -200,16 +280,26 @@ function sendMessage() {
     sender_name: me.username,
     text:        text,
     created_at:  new Date().toISOString(),
+    is_read:     false,
   };
   appendMessage(tempMsg);
   scrollToBottom();
   updateChatPreview(currentChatId, text);
-
-  // Отправляем через сокет
   socket.emit('send_message', { chatId: currentChatId, text });
-
+  socket.emit('stop_typing', { chatId: currentChatId });
+  clearTimeout(typingTimer);
   input.value = '';
   input.style.height = 'auto';
+}
+
+function handleTyping(e) {
+  autoResize(e.target);
+  if (!currentChatId) return;
+  socket.emit('typing', { chatId: currentChatId });
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    socket.emit('stop_typing', { chatId: currentChatId });
+  }, 2000);
 }
 
 function handleMsgKey(e) {
@@ -224,6 +314,36 @@ function autoResize(el) {
 function handleScroll() {
   const c = document.getElementById('messages-container');
   if (c && c.scrollTop < 60 && hasMore) loadMessages(true);
+}
+
+async function deleteMessage(messageId) {
+  if (!confirm('Удалить сообщение?')) return;
+  const res = await api(`/chats/${currentChatId}/messages/${messageId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Не удалось удалить'); return; }
+  const el = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (el) el.remove();
+}
+
+async function deleteChat() {
+  if (!currentChatId) return;
+  if (!confirm('Удалить чат вместе со всеми сообщениями?')) return;
+  const res = await api(`/chats/${currentChatId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Не удалось удалить чат'); return; }
+  currentChatId = null;
+  currentChatType = null;
+  document.getElementById('chat-area').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg width="28" height="28" fill="none" stroke="var(--muted)" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <p>Выберите чат или создайте новый</p>
+    </div>
+  `;
+  await loadChats();
 }
 
 function toggleSearch() {
@@ -251,18 +371,88 @@ async function searchMessages() {
 }
 
 function clearSearch() {
-  document.getElementById('search-input').value = '';
-  document.getElementById('search-results').innerHTML = '';
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  const bar = document.getElementById('search-bar');
+  if (input) input.value = '';
+  if (results) results.innerHTML = '';
+  if (bar) bar.style.display = 'none';
+}
+
+async function openMembersModal() {
+  if (!currentChatId) return;
+  document.getElementById('members-modal').classList.add('open');
+  await loadMembers();
+}
+
+function closeMembersModal(e) {
+  const overlay = document.getElementById('members-modal');
+  if (!e || e.target === overlay) overlay.classList.remove('open');
+}
+
+async function loadMembers() {
+  const res     = await api(`/chats/${currentChatId}/members`);
+  const members = await res.json();
+  const list    = document.getElementById('members-list');
+  list.innerHTML = '';
+  if (!res.ok) { list.textContent = members.error || 'Ошибка'; return; }
+
+  members.forEach(member => {
+    const canDelete = member.role !== 'admin' && Number(member.id) !== Number(me.id);
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);';
+    div.innerHTML = `
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0;">${member.username[0].toUpperCase()}</div>
+      <div style="flex:1;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);">${escHtml(member.username)}</div>
+        <div style="font-size:11px;color:var(--muted);">${member.role === 'admin' ? 'администратор' : 'участник'}</div>
+      </div>
+      ${canDelete ? `<button onclick="deleteMember(${member.id})" style="padding:5px 10px;background:#fdf0ef;border:1px solid #f0cccb;border-radius:6px;font-size:12px;color:var(--danger);cursor:pointer;">Удалить</button>` : ''}
+    `;
+    list.appendChild(div);
+  });
+
+  const memberIds = members.map(m => Number(m.id));
+  const select = document.getElementById('new-member-select');
+  select.innerHTML = '<option value="">Выберите пользователя...</option>';
+  const res2 = await api('/users');
+  const users = await res2.json();
+  users.filter(u => !memberIds.includes(Number(u.id))).forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = u.username;
+    select.appendChild(opt);
+  });
+}
+
+async function addMember() {
+  const select = document.getElementById('new-member-select');
+  const userId = Number(select.value);
+  if (!userId) { alert('Выберите пользователя'); return; }
+  const res = await api(`/chats/${currentChatId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Не удалось добавить'); return; }
+  select.value = '';
+  await loadMembers();
+}
+
+async function deleteMember(userId) {
+  if (!confirm('Удалить участника из группы?')) return;
+  const res = await api(`/chats/${currentChatId}/members/${userId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Не удалось удалить'); return; }
+  await loadMembers();
 }
 
 async function openSaved() {
-  const res  = await api('/chats/private', {
-    method: 'POST',
-    body: JSON.stringify({ userId: me.id }),
-  });
+  const res  = await api('/chats/private', { method: 'POST', body: JSON.stringify({ userId: me.id }) });
   const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Ошибка'); return; }
   await loadChats();
-  openChat(data.id, 'Избранное');
+  openChat(data.id, 'Избранное', 'saved');
 }
 
 async function openModal(mode) {
@@ -297,15 +487,13 @@ function closeModal(e) {
 async function createPrivateChat() {
   const selected = document.querySelector('input[name=user-sel]:checked');
   if (!selected) return alert('Выберите пользователя');
-  const res  = await api('/chats/private', {
-    method: 'POST',
-    body: JSON.stringify({ userId: parseInt(selected.value) }),
-  });
+  const res  = await api('/chats/private', { method: 'POST', body: JSON.stringify({ userId: parseInt(selected.value) }) });
   const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Ошибка'); return; }
   closeModal();
   await loadChats();
   const user = allUsers.find(u => u.id === parseInt(selected.value));
-  openChat(data.id, user?.username || 'Чат');
+  openChat(data.id, user?.username || 'Чат', 'private');
 }
 
 async function createGroupChat() {
@@ -314,14 +502,21 @@ async function createGroupChat() {
   if (!name) return alert('Введите название группы');
   if (!checked.length) return alert('Выберите хотя бы одного участника');
   const memberIds = checked.map(el => parseInt(el.value));
-  const res  = await api('/chats/group', {
-    method: 'POST',
-    body: JSON.stringify({ name, memberIds }),
-  });
+  const res  = await api('/chats/group', { method: 'POST', body: JSON.stringify({ name, memberIds }) });
   const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Ошибка'); return; }
   closeModal();
   await loadChats();
-  openChat(data.id, name);
+  openChat(data.id, name, 'group');
+}
+
+async function deleteAccount() {
+  if (!confirm('Удалить аккаунт? Это нельзя отменить.')) return;
+  const res = await api('/users/me', { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || 'Ошибка'); return; }
+  localStorage.clear();
+  window.location.href = '/';
 }
 
 function logout() {

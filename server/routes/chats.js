@@ -5,6 +5,7 @@ const auth    = require('../middleware/auth');
 const router = express.Router();
 router.use(auth);
 
+// GET /chats — список чатов
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -35,23 +36,28 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /chats/private — создать личный чат или избранное
 router.post('/private', async (req, res) => {
-  const { userId } = req.body;
-  const myId = req.user.id;
+  const userId = Number(req.body.userId);
+  const myId   = Number(req.user.id);
 
   if (!userId) return res.status(400).json({ error: 'userId обязателен' });
+
+  const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+  if (!userCheck.rows.length) {
+    return res.status(404).json({ error: 'Пользователь не найден' });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     if (userId === myId) {
-      // Ищем существующее Избранное
+      // Избранное
       const existing = await client.query(`
         SELECT c.id FROM chats c
         JOIN chat_members cm ON cm.chat_id = c.id
-        WHERE c.type = 'saved' AND cm.user_id = $1
-        LIMIT 1
+        WHERE c.type = 'saved' AND cm.user_id = $1 LIMIT 1
       `, [myId]);
 
       if (existing.rows.length > 0) {
@@ -105,6 +111,7 @@ router.post('/private', async (req, res) => {
   }
 });
 
+// POST /chats/group — создать группу
 router.post('/group', async (req, res) => {
   const { name, memberIds = [] } = req.body;
   const myId = req.user.id;
@@ -141,6 +148,31 @@ router.post('/group', async (req, res) => {
   }
 });
 
+// GET /chats/:id/members — список участников
+router.get('/:id/members', async (req, res) => {
+  const chatId = parseInt(req.params.id);
+  const member = await pool.query(
+    'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+    [chatId, req.user.id]
+  );
+  if (!member.rows.length) {
+    return res.status(403).json({ error: 'Нет доступа' });
+  }
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.id, u.username, cm.role
+      FROM chat_members cm
+      JOIN users u ON u.id = cm.user_id
+      WHERE cm.chat_id = $1
+      ORDER BY cm.role DESC, u.username
+    `, [chatId]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// POST /chats/:id/members — добавить участника
 router.post('/:id/members', async (req, res) => {
   const chatId = parseInt(req.params.id);
   const { userId } = req.body;
@@ -162,8 +194,9 @@ router.post('/:id/members', async (req, res) => {
   }
 });
 
+// DELETE /chats/:id/members/:userId — удалить участника
 router.delete('/:id/members/:userId', async (req, res) => {
-  const chatId = parseInt(req.params.id);
+  const chatId      = parseInt(req.params.id);
   const targetUserId = parseInt(req.params.userId);
   const adminCheck = await pool.query(
     'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
@@ -179,6 +212,30 @@ router.delete('/:id/members/:userId', async (req, res) => {
     );
     res.json({ message: 'Участник удалён' });
   } catch (err) {
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// DELETE /chats/:id — удалить чат
+router.delete('/:id', async (req, res) => {
+  const chatId = parseInt(req.params.id);
+  const myId   = req.user.id;
+
+  const adminCheck = await pool.query(
+    'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+    [chatId, myId]
+  );
+  if (!adminCheck.rows[0]) {
+    return res.status(403).json({ error: 'Нет доступа' });
+  }
+
+  try {
+    await pool.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+    await pool.query('DELETE FROM chat_members WHERE chat_id = $1', [chatId]);
+    await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+    res.json({ message: 'Чат удалён' });
+  } catch (err) {
+    console.error('Ошибка удаления чата:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

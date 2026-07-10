@@ -109,7 +109,6 @@
       text-overflow: ellipsis;
     }
 
-    /* Плашка текущего пользователя — внизу */
     .me-panel {
       padding: 14px 16px;
       border-top: 1px solid var(--border);
@@ -134,13 +133,7 @@
     }
 
     .me-info { flex: 1; min-width: 0; }
-
-    .me-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-    }
-
+    .me-name { font-size: 14px; font-weight: 600; color: var(--text); }
     .me-status {
       font-size: 11px;
       color: var(--primary);
@@ -149,7 +142,6 @@
       gap: 4px;
       margin-top: 1px;
     }
-
     .me-status-dot {
       width: 6px;
       height: 6px;
@@ -229,6 +221,15 @@
     }
     .modal-input:focus { border-color: var(--primary); }
 
+    select.modal-input {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239B8070' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 36px;
+      cursor: pointer;
+    }
+
     .user-list { max-height: 200px; overflow-y: auto; margin: 8px 0 16px; }
 
     .user-item {
@@ -279,7 +280,6 @@
       <div style="padding:20px;color:var(--muted);text-align:center;font-size:13px">Загрузка...</div>
     </div>
 
-    <!-- Плашка с именем внизу -->
     <div class="me-panel">
       <div class="me-avatar" id="my-avatar"></div>
       <div class="me-info">
@@ -303,6 +303,7 @@
     </div>
   </div>
 
+  <!-- Модалка создания чата -->
   <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
     <div class="modal">
       <h3 id="modal-title">Новый чат</h3>
@@ -314,6 +315,21 @@
         <button class="btn btn-primary" style="flex:1" id="modal-confirm-btn">Создать</button>
         <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Модалка участников группы -->
+  <div class="modal-overlay" id="members-modal" onclick="closeMembersModal(event)">
+    <div class="modal">
+      <h3>Участники группы</h3>
+      <div id="members-list" style="margin:12px 0;max-height:240px;overflow-y:auto;"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <select id="new-member-select" class="modal-input" style="margin:0;">
+          <option value="">Выберите пользователя...</option>
+        </select>
+        <button class="btn btn-primary" onclick="addMember()">+</button>
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px;" onclick="closeMembersModal()">Закрыть</button>
     </div>
   </div>
 
