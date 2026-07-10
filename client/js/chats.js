@@ -35,7 +35,12 @@ const membersList = document.getElementById("membersList");
 const memberIdInput = document.getElementById("memberIdInput");
 const addMemberBtn = document.getElementById("addMemberBtn");
 
+//кнопки удаления
+const deleteChatBtn = document.getElementById("deleteChatBtn");
+const deleteAccountBtn = document.getElementById("deleteAccountBtn");
+
 loadChats();
+
 //показать чаты
 async function loadChats() {
     const response = await fetch("/chats", {
@@ -43,18 +48,25 @@ async function loadChats() {
             Authorization: "Bearer " + token
         }
     });
+
     const chats = await response.json();
+
     chatsList.innerHTML = "";
+
     for (let chat of chats) {
         const div = document.createElement("div");
+
         div.className = "chat-item";
         div.textContent = chat.name || "Личный чат";
+
         div.onclick = function() {
             openChat(chat.id, chat.name || "Личный чат");
         };
+
         chatsList.appendChild(div);
     }
 }
+
 //открыть чат
 async function openChat(chatId, name) {
     currentChatId = chatId;
@@ -72,34 +84,44 @@ async function openChat(chatId, name) {
 
     messageInput.focus();
 }
+
 //показать смс
 async function loadMessages(prepend) {
     if (!currentChatId || !hasMore) {
         return;
     }
+
     let url = "/chats/" + currentChatId + "/messages?limit=30";
+
     if (oldestMessageId) {
         url += "&before=" + oldestMessageId;
     }
+
     const response = await fetch(url, {
         headers: {
             Authorization: "Bearer " + token
         }
     });
+
     const messages = await response.json();
+
     if (messages.error) {
         alert(messages.error);
         return;
     }
+
     if (messages.length === 0) {
         hasMore = false;
         loadMoreBtn.classList.add("hidden");
         return;
     }
+
     oldestMessageId = messages[0].id;
+
     for (let message of messages) {
         appendMessage(message, prepend);
     }
+
     if (messages.length < 30) {
         hasMore = false;
         loadMoreBtn.classList.add("hidden");
@@ -116,6 +138,7 @@ messageForm.addEventListener("submit", function(event) {
     event.preventDefault();
     sendMessage();
 });
+
 //отправить смс
 function sendMessage() {
     const text = messageInput.value.trim();
@@ -123,46 +146,82 @@ function sendMessage() {
     if (!currentChatId || text === "") {
         return;
     }
+
     socket.emit("send_message", {
         chatId: currentChatId,
         text: text
     });
+
     messageInput.value = "";
 }
+
 socket.on("new_message", function(message) {
-    if (message.chat_id === currentChatId) {
+    if (Number(message.chat_id) === Number(currentChatId)) {
         appendMessage(message, false);
         scrollToBottom();
     }
 });
+
 loadMoreBtn.addEventListener("click", function() {
     loadMessages(true);
 });
+
 //добавить смс
 function appendMessage(message, prepend) {
     const div = document.createElement("div");
+
     div.className = "message";
-    if (Number(message.sender_id) === myUserId) {
+    div.dataset.messageId = message.id;
+
+    const isMyMessage =
+        Number(message.sender_id) === Number(myUserId);
+
+    if (isMyMessage) {
         div.classList.add("own");
     }
+
     div.innerHTML = `
-        <div class="message-author">${message.sender_name || "User"}</div>
-        <div class="message-text">${escapeHtml(message.text)}</div>
-        <div class="message-time">${formatDate(message.created_at)}</div>
+        <div class="message-author">
+            ${escapeHtml(message.sender_name || "User")}
+        </div>
+
+        <div class="message-text">
+            ${escapeHtml(message.text)}
+        </div>
+
+        <div class="message-bottom">
+            <span class="message-time">
+                ${formatDate(message.created_at)}
+            </span>
+
+            ${
+                isMyMessage
+                    ? `
+                        <button
+                            class="delete-message-btn"
+                            onclick="deleteMessage(${message.id})"
+                        >
+                            Удалить
+                        </button>
+                    `
+                    : ""
+            }
+        </div>
     `;
+
     if (prepend) {
         messagesDiv.prepend(div);
     } else {
         messagesDiv.appendChild(div);
     }
 }
+
 function scrollToBottom() {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 //отформатировать дату
 function formatDate(dateString) {
     const date = new Date(dateString);
-
     return date.toLocaleString("ru-RU", {
         hour: "2-digit",
         minute: "2-digit",
@@ -183,7 +242,6 @@ searchBtn.addEventListener("click", searchMessages);
 //поиск по смс
 async function searchMessages() {
     const q = searchInput.value.trim();
-
     if (!currentChatId || q === "") {
         return;
     }
@@ -210,7 +268,7 @@ async function searchMessages() {
         const div = document.createElement("div");
         div.className = "search-result";
         div.innerHTML = `
-            <b>${message.sender_name || "User"}</b>: 
+            <b>${escapeHtml(message.sender_name || "User")}</b>:
             ${escapeHtml(message.text)}
         `;
         searchResults.appendChild(div);
@@ -223,6 +281,7 @@ createGroupBtn.addEventListener("click", async function() {
 closeGroupBtn.addEventListener("click", function() {
     groupModal.classList.add("hidden");
 });
+
 //создать группу
 async function loadUsersForGroup() {
     const response = await fetch("/users", {
@@ -234,11 +293,14 @@ async function loadUsersForGroup() {
     usersList.innerHTML = "";
     for (let user of users) {
         const label = document.createElement("label");
+
         label.className = "user-checkbox";
+
         label.innerHTML = `
             <input type="checkbox" value="${user.id}">
-            ${user.username}
+            ${escapeHtml(user.username)}
         `;
+
         usersList.appendChild(label);
     }
 }
@@ -252,7 +314,6 @@ saveGroupBtn.addEventListener("click", async function() {
         alert("Введите название группы");
         return;
     }
-
     const response = await fetch("/chats/group", {
         method: "POST",
         headers: {
@@ -264,19 +325,15 @@ saveGroupBtn.addEventListener("click", async function() {
             memberIds: memberIds
         })
     });
-
     const result = await response.json();
-
     if (result.error) {
         alert(result.error);
         return;
     }
-
     groupModal.classList.add("hidden");
     groupNameInput.value = "";
     loadChats();
 });
-
 membersToggleBtn.addEventListener("click", async function() {
     if (!currentChatId) {
         return;
@@ -284,31 +341,36 @@ membersToggleBtn.addEventListener("click", async function() {
     membersModal.classList.remove("hidden");
     await loadMembers();
 });
-
 closeMembersBtn.addEventListener("click", function() {
     membersModal.classList.add("hidden");
 });
 //загрузить участников
 async function loadMembers() {
-    const response = await fetch("/chats/" + currentChatId + "/members", {
-        headers: {
-            Authorization: "Bearer " + token
+    const response = await fetch(
+        "/chats/" + currentChatId + "/members",
+        {
+            headers: {
+                Authorization: "Bearer " + token
+            }
         }
-    });
+    );
     const members = await response.json();
     membersList.innerHTML = "";
     if (members.error) {
         membersList.textContent = members.error;
         return;
     }
-
     for (let member of members) {
         const div = document.createElement("div");
         div.className = "member-item";
-
         div.innerHTML = `
-            <span>${member.username} — ${member.role}</span>
-            <button onclick="deleteMember(${member.id})">Удалить</button>
+            <span>
+                ${escapeHtml(member.username)} — ${escapeHtml(member.role)}
+            </span>
+
+            <button onclick="deleteMember(${member.id})">
+                Удалить
+            </button>
         `;
         membersList.appendChild(div);
     }
@@ -319,16 +381,19 @@ addMemberBtn.addEventListener("click", async function() {
         alert("Введите ID пользователя");
         return;
     }
-    const response = await fetch("/chats/" + currentChatId + "/members", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token
-        },
-        body: JSON.stringify({
-            userId: userId
-        })
-    });
+    const response = await fetch(
+        "/chats/" + currentChatId + "/members",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + token
+            },
+            body: JSON.stringify({
+                userId: userId
+            })
+        }
+    );
     const result = await response.json();
     if (result.error) {
         alert(result.error);
@@ -337,18 +402,135 @@ addMemberBtn.addEventListener("click", async function() {
     memberIdInput.value = "";
     loadMembers();
 });
+
 //удалить участника
 async function deleteMember(userId) {
-    const response = await fetch("/chats/" + currentChatId + "/members/" + userId, {
-        method: "DELETE",
-        headers: {
-            Authorization: "Bearer " + token
+    const response = await fetch(
+        "/chats/" + currentChatId + "/members/" + userId,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: "Bearer " + token
+            }
         }
-    });
+    );
     const result = await response.json();
     if (result.error) {
         alert(result.error);
         return;
     }
     loadMembers();
+}
+
+
+//удалить смс
+async function deleteMessage(messageId) {
+    if (!currentChatId) {
+        return;
+    }
+    const answer = confirm("Удалить сообщение?");
+    if (!answer) {
+        return;
+    }
+    const response = await fetch(
+        "/chats/" +
+        currentChatId +
+        "/messages/" +
+        messageId,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: "Bearer " + token
+            }
+        }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+        alert(result.error || "Не удалось удалить сообщение");
+        return;
+    }
+
+    const messageElement = document.querySelector(
+        `[data-message-id="${messageId}"]`
+    );
+
+    if (messageElement) {
+        messageElement.remove();
+    }
+}
+//удалить чат
+if (deleteChatBtn) {
+    deleteChatBtn.addEventListener("click", deleteChat);
+}
+async function deleteChat() {
+    if (!currentChatId) {
+        alert("Сначала выберите чат");
+        return;
+    }
+    const answer = confirm(
+        "Удалить чат вместе со всеми сообщениями?"
+    );
+
+    if (!answer) {
+        return;
+    }
+    const response = await fetch(
+        "/chats/" + currentChatId,
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: "Bearer " + token
+            }
+        }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+        alert(result.error || "Не удалось удалить чат");
+        return;
+    }
+    currentChatId = null;
+    oldestMessageId = null;
+    hasMore = true;
+    chatTitle.textContent = "Выберите чат";
+    messagesDiv.innerHTML = "";
+    searchResults.innerHTML = "";
+    searchResults.classList.add("hidden");
+    loadMoreBtn.classList.add("hidden");
+    loadChats();
+}
+
+
+//удалить аккаунт
+if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener(
+        "click",
+        deleteAccount
+    );
+}
+
+async function deleteAccount() {
+    const answer = confirm(
+        "Удалить аккаунт? Это действие нельзя отменить."
+    );
+    if (!answer) {
+        return;
+    }
+    const response = await fetch(
+        "/users/me",
+        {
+            method: "DELETE",
+            headers: {
+                Authorization: "Bearer " + token
+            }
+        }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+        alert(result.error || "Не удалось удалить аккаунт");
+        return;
+    }
+    localStorage.removeItem("token");
+    localStorage.removeItem("user_id");
+    localStorage.removeItem("user");
+    window.location.href = "/";
 }

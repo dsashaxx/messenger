@@ -114,4 +114,106 @@ router.delete("/:id/members/:userId", async function(req, res) {
         res.status(500).json({ error: "Ошибка удаления участника" });
     }
 });
+//удаление чата
+router.delete("/:id", async function(req, res) {
+    const chatId = parseInt(req.params.id);
+    const userId = req.user.id;
+  
+    try {
+      const result = await pool.query(
+        `
+        SELECT c.type, c.created_by, cm.role
+        FROM chats c
+        JOIN chat_members cm ON cm.chat_id = c.id
+        WHERE c.id = $1
+          AND cm.user_id = $2
+        `,
+        [chatId, userId]
+      );
+  
+      if (!result.rows.length) {
+        return res.status(403).json({
+          error: "Нет доступа к этому чату"
+        });
+      }
+  
+      const chat = result.rows[0];
+  
+      if (chat.type === "group" && chat.role !== "admin") {
+        return res.status(403).json({
+          error: "Группу может удалить только администратор"
+        });
+      }
+  
+      await pool.query(
+        "DELETE FROM chats WHERE id = $1",
+        [chatId]
+      );
+  
+      res.json({
+        message: "Чат удалён"
+      });
+  
+    } catch (error) {
+      console.error("Ошибка удаления чата:", error);
+  
+      res.status(500).json({
+        error: "Ошибка сервера"
+      });
+    }
+  });
+//удаление аккаунта пользователя( то есть удаление всего,что с ним связано)
+router.delete("/me", async function(req, res) {
+    const userId = req.user.id;
+    const client = await pool.connect();
+  
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "DELETE FROM messages WHERE sender_id = $1",
+        [userId]
+      );
+      await client.query(
+        "DELETE FROM chat_members WHERE user_id = $1",
+        [userId]
+      );
+      await client.query(
+        `
+        DELETE FROM chats
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM chat_members
+          WHERE chat_members.chat_id = chats.id
+        )
+        `
+      );
+      await client.query(
+        "UPDATE chats SET created_by = NULL WHERE created_by = $1",
+        [userId]
+      );
+  
+      await client.query(
+        "DELETE FROM users WHERE id = $1",
+        [userId]
+      );
+  
+      await client.query("COMMIT");
+  
+      res.json({
+        message: "Аккаунт удалён"
+      });
+  
+    } catch (error) {
+      await client.query("ROLLBACK");
+  
+      console.error("Ошибка удаления аккаунта:", error);
+  
+      res.status(500).json({
+        error: "Ошибка сервера"
+      });
+  
+    } finally {
+      client.release();
+    }
+  });
 module.exports = router;

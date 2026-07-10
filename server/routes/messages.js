@@ -77,4 +77,46 @@ router.get("/:id/search", async function(req, res) {
         console.log(error);
         res.status(500).json({ error: "Ошибка сервера" });}
 });
+
+//удаление смс P.S. удалять может только пользователь,написавший его
+router.delete("/:id/messages/:messageId", async function(req, res) {
+    const chatId = parseInt(req.params.id);
+    const messageId = parseInt(req.params.messageId);
+    const userId = req.user.id;
+  
+    try {
+      const message = await pool.query(
+        `
+        SELECT id
+        FROM messages
+        WHERE id = $1
+          AND chat_id = $2
+          AND sender_id = $3
+        `,
+        [messageId, chatId, userId]
+      );
+  
+      if (!message.rows.length) {
+        return res.status(403).json({
+          error: "Можно удалить только своё сообщение"
+        });
+      }
+  
+      await pool.query(
+        "DELETE FROM messages WHERE id = $1",
+        [messageId]
+      );
+  
+      res.json({
+        message: "Сообщение удалено"
+      });
+  
+    } catch (error) {
+      console.error("Ошибка удаления сообщения:", error);
+  
+      res.status(500).json({
+        error: "Ошибка сервера"
+      });
+    }
+  });
 module.exports = router;

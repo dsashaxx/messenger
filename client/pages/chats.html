@@ -6,13 +6,20 @@
     <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
+
 <div class="app">
     <aside class="side">
+
         <div class="side-top">
             <h2>Чаты</h2>
             <button id="newGroup">+</button>
         </div>
+
         <div id="chatList" class="list"></div>
+
+        <button id="deleteAccountBtn">
+            Удалить аккаунт
+        </button>
     </aside>
     <main class="main">
         <div class="top">
@@ -20,46 +27,83 @@
             <div class="btns">
                 <button id="showSearch">Поиск</button>
                 <button id="showUsers">Участники</button>
+                <button id="deleteChatBtn">Удалить чат</button>
             </div>
         </div>
         <div id="searchBlock" class="search hide">
-            <input id="searchText" type="text" placeholder="Поиск сообщений">
+            <input
+                id="searchText"
+                type="text"
+                placeholder="Поиск сообщений"
+            >
             <button id="searchBtn">Найти</button>
         </div>
         <div id="searchResult" class="result hide"></div>
         <button id="moreBtn" class="more hide">
             Загрузить ещё
         </button>
+
         <div id="msgs" class="msgs"></div>
+
         <form id="msgForm" class="form">
-            <input id="msgText" type="text" placeholder="Введите сообщение..." autocomplete="off">
-            <button type="submit">Отправить</button>
+            <input
+                id="msgText"
+                type="text"
+                placeholder="Введите сообщение..."
+                autocomplete="off"
+            >
+            <button type="submit">
+                Отправить
+            </button>
         </form>
+
     </main>
+
 </div>
 
 <div id="groupBox" class="modal hide">
     <div class="box">
         <h3>Создать группу</h3>
-        <input id="groupName" type="text" placeholder="Название группы">
+
+        <input
+            id="groupName"
+            type="text"
+            placeholder="Название группы"
+        >
+
         <div id="userList" class="users"></div>
+
         <button id="saveGroup">Создать</button>
         <button id="closeGroup">Закрыть</button>
     </div>
 </div>
+
 <div id="usersBox" class="modal hide">
     <div class="box">
+
         <h3>Участники</h3>
+
         <div class="add">
-            <input id="newUserId" type="number" placeholder="ID пользователя">
-            <button id="addUser">Добавить</button>
+            <input
+                id="newUserId"
+                type="number"
+                placeholder="ID пользователя"
+            >
+
+            <button id="addUser">
+                Добавить
+            </button>
         </div>
+
         <div id="members"></div>
-        <button id="closeUsers">Закрыть</button>
+
+        <button id="closeUsers">
+            Закрыть
+        </button>
+
     </div>
 </div>
 <script src="/socket.io/socket.io.js"></script>
 <script src="../js/chats.js"></script>
-
 </body>
 </html>
