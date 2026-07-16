@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Messenger</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+
+    .auth-wrap {
+      display: flex;
+      width: 100%;
+      max-width: 420px;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .auth-logo {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .auth-logo h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .auth-logo h1 span {
+      color: var(--primary);
+    }
+
+    .auth-logo p {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    .auth-card {
+      background: var(--surface);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 36px;
+      width: 100%;
+      border: 1px solid var(--border);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 28px;
+      border: 1px solid var(--border);
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .15s;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(61,43,31,.1);
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      letter-spacing: 0.01em;
+      margin-top: 4px;
+    }
+
+    .submit-btn:hover { background: var(--primary-h); }
+    .submit-btn:active { transform: scale(.98); }
+
+    .auth-footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-logo">
+      <h1>mes<span>sen</span>ger</h1>
+      <p>VK Education — Кейс 1</p>
+    </div>
+
+    <div class="auth-card">
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('login')">Войти</button>
+        <button class="tab" onclick="showTab('register')">Регистрация</button>
+      </div>
+
+      <div id="error-msg" class="error-msg"></div>
+
+      <div id="tab-login">
+        <div class="form-group">
+          <label>Имя пользователя</label>
+          <input type="text" id="login-username" placeholder="Введите username" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input type="password" id="login-password" placeholder="Введите пароль" autocomplete="current-password">
+        </div>
+        <button class="submit-btn" onclick="login()">Войти</button>
+      </div>
+
+      <div id="tab-register" style="display:none">
+        <div class="form-group">
+          <label>Имя пользователя</label>
+          <input type="text" id="reg-username" placeholder="Минимум 3 символа" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>Пароль</label>
+          <input type="password" id="reg-password" placeholder="Минимум 6 символов" autocomplete="new-password">
+        </div>
+        <button class="submit-btn" onclick="register()">Создать аккаунт</button>
+      </div>
+    </div>
+
+    <div class="auth-footer">
+      Мессенджер · VK Education 2026
+    </div>
+  </div>
+
+  <script>
+    if (localStorage.getItem('token')) {
+      window.location.href = '/pages/chats.html';
+    }
+
+    function showTab(name) {
+      document.getElementById('tab-login').style.display    = name === 'login'    ? '' : 'none';
+      document.getElementById('tab-register').style.display = name === 'register' ? '' : 'none';
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', (i === 0) === (name === 'login'));
+      });
+      showError('');
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.classList.toggle('visible', !!msg);
+    }
+
+    async function login() {
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+      if (!username || !password) return showError('Заполните все поля');
+      try {
+        const res  = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) return showError(data.error);
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        window.location.href = '/pages/chats.html';
+      } catch {
+        showError('Ошибка соединения с сервером');
+      }
+    }
+
+    async function register() {
+      const username = document.getElementById('reg-username').value.trim();
+      const password = document.getElementById('reg-password').value;
+      if (!username || !password) return showError('Заполните все поля');
+      try {
+        const res  = await fetch('/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) return showError(data.error);
+        showError('');
+        showTab('login');
+        document.getElementById('login-username').value = username;
+      } catch {
+        showError('Ошибка соединения с сервером');
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const loginVisible = document.getElementById('tab-login').style.display !== 'none';
+        loginVisible ? login() : register();
+      }
+    });
+  </script>
+</body>
+</html>
